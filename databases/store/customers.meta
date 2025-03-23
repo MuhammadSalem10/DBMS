@@ -1,0 +1,3 @@
+id:int:primary_key
+name:string
+address:string
