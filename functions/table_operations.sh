@@ -57,10 +57,16 @@ function create_table {
         return 1
     fi
 
+    local column_added=false
+
     while true; do
         read -p "Add column (name:type). write \"done\" to finish: " col_input
         if [[ "$col_input" == "done" ]]; then
-            break
+            if [ "$column_added" = false ]; then
+                echo "Error: Please add at least one column."
+            else
+                break
+            fi
         fi
 
         IFS=':'
@@ -81,6 +87,9 @@ function create_table {
         esac
 
         echo "$col_name:$col_type" >>"$metadata_file"
+        echo "$col_name" >>"$data_file"
+        column_added=true
+
     done
 
     local count=1
@@ -91,8 +100,121 @@ function create_table {
 
     read -p "Choose primary key column: " PK_col
 
-    sed -i "${PK_col}s/$/:primary_key/" "$metadata_file"
-
-    touch "$data_file"
+    sed -i "s/^$PK_col:.*/&:primary_key/" "$metadata_file"
+    cut -d: -f1 "$metadata_file" | paste -d: -s >"$data_file"
     echo "Table '$table_name' created in '$CURRENT_DB'."
+    pause
+}
+
+function list_tables() {
+    local tables
+    echo "=============  List Tables in Database  ========== "
+    tables=$(find "$DB_DIR/$CURRENT_DB" -name "*.meta" | awk -F'/' '{print $NF}' | sed "s/\.meta$//")
+
+    if [[ -z "$tables" ]]; then
+        echo "The database is empty."
+    fi
+    echo "Tables in $CURRENT_DB database are: "
+    echo "$tables" | nl
+    pause
+}
+
+function drop_table() {
+    echo "============= Drop Table from Database ========="
+    local table_name
+    tables=$(find "$DB_DIR/$CURRENT_DB" -name "*.meta" | awk -F'/' '{print $NF}' | sed "s/\.meta$//")
+
+    if [[ -z "$tables" ]]; then
+        echo "The database is empty."
+    fi
+    echo "Tables in $CURRENT_DB database are: "
+    echo "$tables" | nl
+
+    read -p "Enter table name to drop: " table_name
+
+    table_file="$DB_DIR/$CURRENT_DB/$table_name.meta"
+
+    if [[ -f "$table_file" ]]; then
+        read -p "Are you sure you want to delete table '$table_name'? (y/n): " confirm
+        if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+            rm "$DB_DIR/$CURRENT_DB/$table_name.meta"
+            rm "$DB_DIR/$CURRENT_DB/$table_name.data"
+            echo -e "Table '$table_name' deleted successfully."
+        else
+            echo -e "Table drop canceled."
+        fi
+    else
+        echo -e "Error: Table '$table_name' does not exist."
+    fi
+
+    pause
+
+}
+
+function insert_into_table() {
+    echo "============= Insert into a Table ========="
+
+    tables=$(find "$DB_DIR/$CURRENT_DB" -name "*.meta" | awk -F'/' '{print $NF}' | sed "s/\.meta$//")
+
+    if [[ -z "$tables" ]]; then
+        echo "The database is empty."
+    fi
+    echo "Tables in $CURRENT_DB database are: "
+    echo "$tables" | nl
+
+    local table_name
+    read -p "Enter table name: " table_name
+
+    local metadata_file="$DB_DIR/$CURRENT_DB/$table_name.meta"
+    local data_file="$DB_DIR/$CURRENT_DB/$table_name.data"
+
+    if [[ ! -f "$metadata_file" || ! -f "$data_file" ]]; then
+        echo "Error: Table $table_name doesn't exist!"
+        return 1
+    fi
+
+    mapfile -t columns < <(cut -d: -f 1 "$metadata_file")
+    mapfile -t types < <(cut -d: -f 2 "$metadata_file")
+
+    echo "${columns[@]}"
+    echo "${types[@]}"
+
+    local PK_column=$(awk -F: '/:primary_key$/ {print $1}' "$metadata_file")
+
+    declare -a values
+    for ((i = 0; i < ${#columns[@]}; i++)); do
+        local col_name="${columns[i]}"
+        local col_type="${types[i]}"
+
+        while true; do
+            read -p "Enter value for $col_name ($col_type): " value
+            if [[ "$col_name" == "$PK_column" ]]; then
+                if grep -q "^$value:" "$data_file"; then
+                    echo "Error: Primary key $value already exists!"
+                    continue
+                fi
+            fi
+
+            if [[ "$col_type" == "int" && ! "$value" =~ ^[0-9]+$ ]]; then
+                echo "Error: '$col_name' must be an integer!"
+                continue
+            fi
+
+            if [[ "$col_type" == "string" && "$value" =~ [:] ]]; then
+                echo "Error: '$col_name' cannot contain ':'!"
+                continue
+            fi
+
+            values+=("$value")
+            break
+        done
+    done
+
+    printf "%s\n" "$(
+        IFS=:
+        echo "${values[*]}"
+    )" >>"$data_file"
+    echo "Data inserted successfully into '$table_name'."
+
+    pause
 }

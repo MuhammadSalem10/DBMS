@@ -38,7 +38,7 @@ function drop_db {
         if [[ $confirm =~ ^[yY]$ ]]; then
             if rm -r "$db_path"; then
                 echo "Database $db_name dropped"
-                if [ "$CURRENT_DATABASE" == "$db_name" ]; then
+                if [ "$CURRENT_DB" == "$db_name" ]; then
                     CURRENT_DB=""
                 fi
             else
@@ -64,7 +64,7 @@ function connect_db {
         table_menu "$db_name"
     else
         echo "Database $db_name not found."
+        pause
     fi
-
-    echo "from con $CURRENT_DB"
+    pause
 }
