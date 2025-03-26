@@ -37,3 +37,5 @@ while true; do
 
     esac
 done
+
+#select - update - create table - list tables - Connect to DB - Drop table

@@ -218,3 +218,95 @@ function insert_into_table() {
 
     pause
 }
+
+function select_from_table {
+    local table_name
+    local desired_cols=()
+    local filter_col_name=""
+    local filter_val=""
+    local filter_col_index=""
+    read -p "Enter table name to select from: " table_name
+
+    local metadata_file="$DB_DIR/$CURRENT_DB/$table_name.meta"
+    local data_file="$DB_DIR/$CURRENT_DB/$table_name.data"
+    if [[ ! -f "$metadata_file" || ! -f "$data_file" ]]; then
+        echo "Error: Table '$table_name' does not exist!"
+        return 1
+    fi
+
+    local header
+    header=$(head -n 1 "$data_file")
+    mapfile -t -d: fields <<<"$header"
+
+    echo "Available columns: "
+    head -n 1 "$data_file" | tr ":" " "
+
+    read -p "Do you want to retrive all the data 
+            1. All 
+            2. Choose sepcific columns 
+            " proj_input
+
+    if [[ "$proj_input" == 1 ]]; then
+        desired_cols="${fields[*]}"
+    elif [[ "$proj_input" == 2 ]]; then
+        while true; do
+            echo "Enter column names to retrieve (separated by ','): "
+            read -r user_input
+            IFS="," read -ra desired_cols <<<"$user_input"
+
+            invalid_columns=()
+            for col in "${desired_cols[@]}"; do
+                if [[ ! "${fields[*]}" =~ $col ]]; then
+                    invalid_columns+=("$col")
+                fi
+            done
+
+            if [[ ${#invalid_columns[@]} -eq 0 ]]; then
+                break
+            else
+                echo "Error: The following columns do not exist in the table: ${invalid_columns[*]}"
+                echo "Please enter valid column names."
+            fi
+        done
+
+    fi
+
+    read -p "Do you want to filter rows based on a column value? (y/n): " filter_choice
+    if [[ "$filter_choice" =~ ^[Yy]$ ]]; then
+        while true; do
+            read -p "Enter the column name to filter on: " filter_col_name
+
+            if echo "${fields[@]}" | grep -wq "$filter_col_name"; then
+                read -p "Enter the filter value: " filter_val
+                break
+            else
+                echo "Error: Column '$filter_col_name' not found in the table!"
+                continue
+            fi
+        done
+    fi
+
+    declare -A columns_dict
+
+    count=1
+    for field in "${fields[@]}"; do
+        if echo "${desired_cols[@]}" | grep -wq "$field"; then
+            columns_dict[$field]=$count
+        fi
+        if [[ $filter_col_name -eq $field ]]; then
+            filter_col_index=$count
+        fi
+        ((++count))
+    done
+
+    values_array=("${columns_dict[@]}")
+    sorted_columns_nums=$(printf "%s\n" "${values_array[@]}" | sort -n)
+
+    serialized_array=$(
+        IFS=" "
+        echo "${sorted_columns_nums[*]}"
+    )
+
+    awk -v columns_indexes="$serialized_array" -v filter_col_index="$filter_col_index" -v filter_val="$filter_val" -f ./awk/select_script.awk "$data_file"
+    pause
+}
