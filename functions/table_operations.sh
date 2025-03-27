@@ -236,7 +236,9 @@ function select_from_table {
 
     local header
     header=$(head -n 1 "$data_file")
-    mapfile -t -d: fields <<<"$header"
+    IFS=':' read -ra fields <<<"$header"
+    unset IFS
+    # mapfile -t -d: fields <<<"$header"
 
     echo "Available columns: "
     head -n 1 "$data_file" | tr ":" " "
@@ -253,6 +255,7 @@ function select_from_table {
             echo "Enter column names to retrieve (separated by ','): "
             read -r user_input
             IFS="," read -ra desired_cols <<<"$user_input"
+            unset IFS
 
             invalid_columns=()
             for col in "${desired_cols[@]}"; do
@@ -293,20 +296,68 @@ function select_from_table {
         if echo "${desired_cols[@]}" | grep -wq "$field"; then
             columns_dict[$field]=$count
         fi
-        if [[ $filter_col_name -eq $field ]]; then
-            filter_col_index=$count
+        # if [[ -n "$filter_col_name" && "$filter_col_name" == "$field" ]]; then
+        #     filter_col_index=$count
+        #     echo "$filter_col_name fcn $field fi $count count"
+        # fi
+        if [[ -n "$filter_col_name" ]]; then
+            echo "filter_col_name is not empty: $filter_col_name"
+            if [[ "$filter_col_name" == "$field" ]]; then
+                echo "Match found: $filter_col_name equals $field"
+                filter_col_index=$count
+                echo "Assigned filter_col_index: $filter_col_index (count: $count)"
+            else
+                echo "No match: $filter_col_name does not equal $field"
+                echo "Length of filter_col_name: ${#filter_col_name}"
+                echo "Length of field: ${#field}"
+            fi
+        else
+            echo "filter_col_name is empty"
         fi
         ((++count))
     done
 
     values_array=("${columns_dict[@]}")
-    sorted_columns_nums=$(printf "%s\n" "${values_array[@]}" | sort -n)
-
+    #sorted_columns_nums=$(printf "%s\n" "${values_array[@]}" | sort -n)
+    sorted_columns_nums=$(sort -n <<<"${values_array[@]}")
     serialized_array=$(
         IFS=" "
         echo "${sorted_columns_nums[*]}"
     )
 
+    echo "filter index $filter_col_index and fv $filter_val"
+
     awk -v columns_indexes="$serialized_array" -v filter_col_index="$filter_col_index" -v filter_val="$filter_val" -f ./awk/select_script.awk "$data_file"
+    pause
+}
+
+function update_table() {
+    local table_name
+    local target_column_number
+    local target_column
+    declare -A typesMap
+    read -p "Enter table name to update: " table_name
+
+    local metadata_file="$DB_DIR/$CURRENT_DB/$table_name.meta"
+    local data_file="$DB_DIR/$CURRENT_DB/$table_name.data"
+
+    if [[ ! -f "$metadata_file" || ! -f "$data_file" ]]; then
+        echo "Error: Table '$table_name' does not exist!"
+        return 1
+    fi
+
+    local header
+    header=$(head -n 1 "$data_file")
+    IFS=":" read -a columns <<<"$header"
+    #colums: id name phone address
+    # for col in "${columns[@]}"; do
+    #     typesMap["$col"]= awk -F: '{}'
+    # done
+    local pk_col
+    local pk_val
+    pk_col=$(grep ":primary_key" "$metadata_file" | cut -d: -f 1)
+    local col_index
+    col_index=$(awk -F':' -v pk_col="$pk_col" '{ for (i=1; i<=NF; i++) if ($i == pk_col) print i; }' <<<"$header")
+
     pause
 }
